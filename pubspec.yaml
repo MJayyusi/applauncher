@@ -1,0 +1,40 @@
+name: applauncher
+description: "Simple Android app launcher with TV support"
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # App management and launching
+  installed_apps: ^1.6.0
+  
+  # Data persistence
+  shared_preferences: ^2.2.2
+  
+  # UI components
+  scrollable_positioned_list: ^0.3.8
+  
+  # Device detection
+  device_info_plus: ^10.1.0
+  
+  # Material Design
+  cupertino_icons: ^1.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  
+  # App icon
+  assets:
+    - icon.png
+    - reference_icon.png
