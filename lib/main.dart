@@ -1,3 +1,11 @@
+/*
+ * App Launcher
+ * 
+ * Simple Android app launcher with TV support
+ * 
+ * Author: Moe Jayyusi
+ */
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:installed_apps/installed_apps.dart';
@@ -57,7 +65,6 @@ class _LauncherHomePageState extends State<LauncherHomePage>
   // Whether the apps grid currently has focus (controls highlight)
   bool _gridActive = true;
   // Grid settings for app selection view
-  int _gridCrossAxisCount = 4;
   final ItemScrollController _itemScrollController = ItemScrollController();
   int _focusedButtonIndex =
       0; // 0 = Change Selection, 1 = Launch Now, 2 = Settings
@@ -66,7 +73,7 @@ class _LauncherHomePageState extends State<LauncherHomePage>
   bool _isCountingDown = false;
   int _countdownSeconds = 10;
   Timer? _countdownTimer;
-  bool _isFirstStartup = true;
+  bool _isFlashing = false;
   bool _showSystemApps = false;
   // Exit confirmation
   bool _showExitConfirmation = false;
@@ -113,23 +120,6 @@ class _LauncherHomePageState extends State<LauncherHomePage>
       _startCountdown();
     }
   }
-
-  Future<void> _handleAppResume() async {
-    // Handle app resuming from background
-    if (mounted) {
-      setState(() {
-        _isLoading = true;
-      });
-
-      // Small delay to ensure smooth transition
-      await Future.delayed(const Duration(milliseconds: 100));
-
-      // Reload data
-      await _loadData();
-    }
-  }
-
-  bool get _isAppLoaded => _installedApps.isNotEmpty && !_isLoading;
 
   // Removed lifecycle-based countdown cancellation to ensure countdown runs consistently
 
@@ -377,7 +367,6 @@ class _LauncherHomePageState extends State<LauncherHomePage>
     setState(() {
       _selectedAppPackage = app.packageName;
       _hasSelectedApp = true;
-      _isFirstStartup = false; // Reset first startup flag
     });
   }
 
@@ -388,7 +377,6 @@ class _LauncherHomePageState extends State<LauncherHomePage>
     setState(() {
       _selectedAppPackage = null;
       _hasSelectedApp = false;
-      _isFirstStartup = false; // Reset first startup flag
     });
   }
 
@@ -435,19 +423,38 @@ class _LauncherHomePageState extends State<LauncherHomePage>
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (event is KeyDownEvent) {
       // Handle TV remote navigation
+      final orientation = MediaQuery.of(context).orientation;
+      final isLandscape = orientation == Orientation.landscape;
+
       switch (event.logicalKey) {
         // Navigation keys
         case LogicalKeyboardKey.arrowUp:
-          _navigateUp();
+          if (isLandscape) {
+            _navigateRight(); // Up becomes Right in landscape
+          } else {
+            _navigateUp();
+          }
           return KeyEventResult.handled;
         case LogicalKeyboardKey.arrowDown:
-          _navigateDown();
+          if (isLandscape) {
+            _navigateLeft(); // Down becomes Left in landscape
+          } else {
+            _navigateDown();
+          }
           return KeyEventResult.handled;
         case LogicalKeyboardKey.arrowLeft:
-          _navigateLeft();
+          if (isLandscape) {
+            _navigateUp(); // Left becomes Up in landscape
+          } else {
+            _navigateLeft();
+          }
           return KeyEventResult.handled;
         case LogicalKeyboardKey.arrowRight:
-          _navigateRight();
+          if (isLandscape) {
+            _navigateDown(); // Right becomes Down in landscape
+          } else {
+            _navigateRight();
+          }
           return KeyEventResult.handled;
 
         // Selection keys
@@ -506,241 +513,158 @@ class _LauncherHomePageState extends State<LauncherHomePage>
 
   void _navigateUp() {
     if (_hasSelectedApp) {
-      // Selected app view: up moves from Settings (2) to Launch Now (1); from row1 no-op
-      if (_focusedButtonIndex == 2) {
-        setState(() {
-          _focusedButtonIndex = 1; // move up to top row, right-aligned
-        });
-        _updateButtonFocus();
+      // Selected app view: up navigation depends on orientation
+      final orientation = MediaQuery.of(context).orientation;
+      final isLandscape = orientation == Orientation.landscape;
+
+      if (isLandscape) {
+        // Landscape: all buttons in one row, up/down disabled
+        return;
+      } else {
+        // Portrait: up moves from Launch Now (2) to Settings (1)
+        if (_focusedButtonIndex == 2) {
+          setState(() {
+            _focusedButtonIndex = 1;
+          });
+          _updateButtonFocus();
+        }
       }
     } else {
-      // Grid navigation: move up by a full row; if at first row, focus toggle
+      // Grid navigation: move up by one row
       final orientation = MediaQuery.of(context).orientation;
       final cols = orientation == Orientation.landscape ? 6 : 4;
 
-      if (orientation == Orientation.landscape) {
-        // In landscape mode, up should move left (previous item in row)
-        final atFirstCol = _focusedAppIndex % cols == 0;
-        if (atFirstCol) {
-          // Move focus to toggle - remove grid focus first
-          _focusNode.unfocus();
-          setState(() {
-            _gridActive = false;
-            _focusedIndex = -1;
-            _focusedAppIndex = -1; // Clear app index when leaving grid
-          });
-          _toggleFocus.requestFocus();
-        } else {
-          setState(() {
-            _focusedAppIndex = (_focusedAppIndex - 1).clamp(
-              0,
-              _installedApps.length - 1,
-            );
-            _focusedIndex = _focusedAppIndex;
-            _gridActive = true;
-          });
-          _scrollToFocusedItem();
-        }
+      if (_focusedAppIndex >= cols) {
+        // Move up one row
+        setState(() {
+          _focusedAppIndex = _focusedAppIndex - cols;
+          _focusedIndex = _focusedAppIndex;
+          _gridActive = true;
+        });
+        _scrollToFocusedItem();
       } else {
-        // Portrait mode: up moves by full row
-        if (_focusedAppIndex >= cols) {
-          final nextIndex = _focusedAppIndex - cols;
-          setState(() {
-            _focusedAppIndex = nextIndex;
-            _focusedIndex = nextIndex;
-            _gridActive = true;
-          });
-          _scrollToFocusedItem();
-        } else {
-          // Move focus to toggle - remove grid focus first
-          _focusNode.unfocus();
-          setState(() {
-            _gridActive = false;
-            _focusedIndex = -1;
-            _focusedAppIndex = -1; // Clear app index when leaving grid
-          });
-          _toggleFocus.requestFocus();
-        }
+        // At top row, move to toggle
+        _focusNode.unfocus();
+        setState(() {
+          _gridActive = false;
+          _focusedIndex = -1;
+          _focusedAppIndex = -1;
+        });
+        _toggleFocus.requestFocus();
       }
     }
   }
 
   void _navigateDown() {
     if (_hasSelectedApp) {
-      // Selected app view: down from any top-row button goes to Settings; from Settings no-op
-      if (_focusedButtonIndex == 0 || _focusedButtonIndex == 1) {
-        setState(() {
-          _focusedButtonIndex = 2;
-        });
-        _updateButtonFocus();
+      // Selected app view: down navigation depends on orientation
+      final orientation = MediaQuery.of(context).orientation;
+      final isLandscape = orientation == Orientation.landscape;
+
+      if (isLandscape) {
+        // Landscape: all buttons in one row, up/down disabled
+        return;
+      } else {
+        // Portrait: down from top row buttons goes to Launch Now (2)
+        if (_focusedButtonIndex == 0 || _focusedButtonIndex == 1) {
+          setState(() {
+            _focusedButtonIndex = 2;
+          });
+          _updateButtonFocus();
+        }
       }
     } else {
-      // Grid navigation: move down by a full row, clamp at last item
+      // Grid navigation: move down by one row
       final orientation = MediaQuery.of(context).orientation;
       final cols = orientation == Orientation.landscape ? 6 : 4;
 
-      // If coming from toggle, start at first item
       if (!_gridActive) {
-        _toggleFocus.unfocus(); // Remove toggle focus
+        // Coming from toggle, start at first item
+        _toggleFocus.unfocus();
         setState(() {
           _focusedAppIndex = 0;
           _focusedIndex = 0;
           _gridActive = true;
         });
-        _focusNode.requestFocus(); // Request focus on main focus node
+        _focusNode.requestFocus();
         _scrollToFocusedItem();
         return;
       }
 
-      if (orientation == Orientation.landscape) {
-        // In landscape mode, down should move right (next item in row)
+      final nextIndex = _focusedAppIndex + cols;
+      if (nextIndex < _installedApps.length) {
         setState(() {
-          _focusedAppIndex = (_focusedAppIndex + 1).clamp(
+          _focusedAppIndex = nextIndex;
+          _focusedIndex = nextIndex;
+          _gridActive = true;
+        });
+        _scrollToFocusedItem();
+      } else {
+        // Stay at current position when at bottom
+        setState(() {
+          _focusedAppIndex = _focusedAppIndex.clamp(
             0,
             _installedApps.length - 1,
           );
           _focusedIndex = _focusedAppIndex;
           _gridActive = true;
         });
-        _scrollToFocusedItem();
-      } else {
-        // Portrait mode: down moves by full row
-        final nextIndex = _focusedAppIndex + cols;
-        if (nextIndex < _installedApps.length) {
-          setState(() {
-            _focusedAppIndex = nextIndex;
-            _focusedIndex = nextIndex;
-            _gridActive = true;
-          });
-          _scrollToFocusedItem();
-        } else {
-          // Stay at current position when at bottom
-          setState(() {
-            _focusedAppIndex = _focusedAppIndex.clamp(
-              0,
-              _installedApps.length - 1,
-            );
-            _focusedIndex = _focusedAppIndex;
-            _gridActive = true;
-          });
-          _scrollToFocusedItem();
-        }
       }
     }
   }
 
   void _navigateLeft() {
     if (_hasSelectedApp) {
-      // Selected app view: left/right switch within top row only
-      if (_focusedButtonIndex == 1) {
-        setState(() {
-          _focusedButtonIndex = 0;
-        });
-        _updateButtonFocus();
+      // Selected app view: left navigation depends on orientation
+      final orientation = MediaQuery.of(context).orientation;
+      final isLandscape = orientation == Orientation.landscape;
+
+      if (isLandscape) {
+        // Landscape: all buttons in one row, left moves to previous button
+        if (_focusedButtonIndex > 0) {
+          setState(() {
+            _focusedButtonIndex--;
+          });
+          _updateButtonFocus();
+        }
+      } else {
+        // Portrait: left moves from Settings (1) to Change Selection (0)
+        if (_focusedButtonIndex == 1) {
+          setState(() {
+            _focusedButtonIndex = 0;
+          });
+          _updateButtonFocus();
+        }
       }
     } else {
-      // Grid: move left by one; if at first column, focus toggle
+      // Grid navigation: move left by one
       final orientation = MediaQuery.of(context).orientation;
       final cols = orientation == Orientation.landscape ? 6 : 4;
 
-      if (orientation == Orientation.landscape) {
-        // In landscape mode, left should move up (previous row)
-        final nextIndex = _focusedAppIndex + cols;
-        if (nextIndex <= _installedApps.length) {
-          setState(() {
-            _focusedAppIndex = nextIndex;
-            _focusedIndex = nextIndex;
-            _gridActive = true;
-          });
-          _scrollToFocusedItem();
-        } else {
-          // At first row, move to toggle
-          _focusNode.unfocus();
-          setState(() {
-            _gridActive = false;
-            _focusedIndex = -1;
-            _focusedAppIndex = -1; // Clear app index when leaving grid
-          });
-          _toggleFocus.requestFocus();
-        }
-      } else {
-        // Portrait mode: left moves by one item
-        final atFirstCol = _focusedAppIndex % cols == 0;
-        if (atFirstCol) {
-          _focusNode.unfocus();
-          setState(() {
-            _gridActive = false;
-            _focusedIndex = -1;
-            _focusedAppIndex = -1; // Clear app index when leaving grid
-          });
-          _toggleFocus.requestFocus();
-        } else {
-          setState(() {
-            _focusedAppIndex = (_focusedAppIndex - 1).clamp(
-              0,
-              _installedApps.length - 1,
-            );
-            _focusedIndex = _focusedAppIndex;
-            _gridActive = true;
-          });
-          _scrollToFocusedItem();
-        }
-      }
-    }
-  }
+      final atFirstCol = _focusedAppIndex % cols == 0;
+      final atFirstRow = _focusedAppIndex < cols;
 
-  void _navigateRight() {
-    if (_hasSelectedApp) {
-      if (_focusedButtonIndex == 0) {
+      if (atFirstCol && atFirstRow) {
+        // At first column of first row, move to toggle
+        _focusNode.unfocus();
         setState(() {
-          _focusedButtonIndex = 1;
+          _gridActive = false;
+          _focusedIndex = -1;
+          _focusedAppIndex = -1;
         });
-        _updateButtonFocus();
-      }
-    } else {
-      // Grid: move right by one; clamp at last item
-      // If coming from toggle, start at first item
-      if (!_gridActive) {
-        _toggleFocus.unfocus(); // Remove toggle focus
+        _toggleFocus.requestFocus();
+      } else if (atFirstCol) {
+        // At first column of other rows, move to last item of previous row
+        final prevRowLastIndex = _focusedAppIndex - 1;
         setState(() {
-          _focusedAppIndex = 0;
-          _focusedIndex = 0;
+          _focusedAppIndex = prevRowLastIndex;
+          _focusedIndex = prevRowLastIndex;
           _gridActive = true;
         });
-        _focusNode.requestFocus(); // Request focus on main focus node
         _scrollToFocusedItem();
-        return;
-      }
-
-      final orientation = MediaQuery.of(context).orientation;
-      final cols = orientation == Orientation.landscape ? 6 : 4;
-
-      if (orientation == Orientation.landscape) {
-        // In landscape mode, right should move down (next row)
-        final nextIndex = _focusedAppIndex - cols;
-        if (nextIndex < _installedApps.length) {
-          setState(() {
-            _focusedAppIndex = nextIndex;
-            _focusedIndex = nextIndex;
-            _gridActive = true;
-          });
-          _scrollToFocusedItem();
-        } else {
-          // Stay at current position when at bottom
-          setState(() {
-            _focusedAppIndex = _focusedAppIndex.clamp(
-              0,
-              _installedApps.length - 1,
-            );
-            _focusedIndex = _focusedAppIndex;
-            _gridActive = true;
-          });
-          _scrollToFocusedItem();
-        }
       } else {
-        // Portrait mode: right moves by one item
         setState(() {
-          _focusedAppIndex = (_focusedAppIndex + 1).clamp(
+          _focusedAppIndex = (_focusedAppIndex - 1).clamp(
             0,
             _installedApps.length - 1,
           );
@@ -752,32 +676,84 @@ class _LauncherHomePageState extends State<LauncherHomePage>
     }
   }
 
+  void _navigateRight() {
+    if (_hasSelectedApp) {
+      // Selected app view: right navigation depends on orientation
+      final orientation = MediaQuery.of(context).orientation;
+      final isLandscape = orientation == Orientation.landscape;
+
+      if (isLandscape) {
+        // Landscape: all buttons in one row, right moves to next button
+        if (_focusedButtonIndex < 2) {
+          setState(() {
+            _focusedButtonIndex++;
+          });
+          _updateButtonFocus();
+        }
+      } else {
+        // Portrait: right moves from Change Selection (0) to Settings (1)
+        if (_focusedButtonIndex == 0) {
+          setState(() {
+            _focusedButtonIndex = 1;
+          });
+          _updateButtonFocus();
+        }
+      }
+    } else {
+      // Grid navigation: move right by one
+      if (!_gridActive) {
+        // Coming from toggle, start at first item
+        _toggleFocus.unfocus();
+        setState(() {
+          _focusedAppIndex = 0;
+          _focusedIndex = 0;
+          _gridActive = true;
+        });
+        _focusNode.requestFocus();
+        _scrollToFocusedItem();
+        return;
+      }
+
+      setState(() {
+        _focusedAppIndex = (_focusedAppIndex + 1).clamp(
+          0,
+          _installedApps.length - 1,
+        );
+        _focusedIndex = _focusedAppIndex;
+        _gridActive = true;
+      });
+      _scrollToFocusedItem();
+    }
+  }
+
   void _updateButtonFocus() {
     // Update focus based on current button index
+    // Order: 1. Change Selection, 2. Settings, 3. Launch Now
     switch (_focusedButtonIndex) {
       case 0:
         _changeSelectionFocus.requestFocus();
         break;
       case 1:
-        _launchNowFocus.requestFocus();
+        _settingsFocus.requestFocus();
         break;
       case 2:
-        _settingsFocus.requestFocus();
+        _launchNowFocus.requestFocus();
         break;
     }
   }
 
   void _handleButtonSelection() {
     // Handle button selection based on current focus
+    // Order: 1. Change Selection, 2. Settings, 3. Launch Now
     switch (_focusedButtonIndex) {
       case 0:
         _clearSelection();
         break;
       case 1:
-        _startCountdownForLaunch();
+        _openSystemSettings();
         break;
       case 2:
-        _openSystemSettings();
+        _startCountdownForLaunch();
         break;
     }
   }
@@ -878,6 +854,18 @@ class _LauncherHomePageState extends State<LauncherHomePage>
         _launchSelectedApp();
       }
     });
+
+    // Start flashing animation
+    Timer.periodic(const Duration(milliseconds: 500), (timer) {
+      if (!mounted || !_isCountingDown) {
+        timer.cancel();
+        return;
+      }
+
+      setState(() {
+        _isFlashing = !_isFlashing;
+      });
+    });
   }
 
   void _startCountdownForLaunch() {
@@ -892,6 +880,7 @@ class _LauncherHomePageState extends State<LauncherHomePage>
     setState(() {
       _isCountingDown = false;
       _countdownSeconds = 10;
+      _isFlashing = false;
     });
   }
 
@@ -1081,199 +1070,176 @@ class _LauncherHomePageState extends State<LauncherHomePage>
       autofocus: true,
       onKey: (node, event) {
         if (event is RawKeyDownEvent) {
-          // Handle navigation and selection for countdown screen
-          switch (event.logicalKey) {
-            case LogicalKeyboardKey.arrowUp:
-            case LogicalKeyboardKey.arrowDown:
-            case LogicalKeyboardKey.arrowLeft:
-            case LogicalKeyboardKey.arrowRight:
-              // Navigate to cancel button
-              _cancelFocus.requestFocus();
-              return KeyEventResult.handled;
-            case LogicalKeyboardKey.select:
-            case LogicalKeyboardKey.enter:
-            case LogicalKeyboardKey.space:
-              // Press the cancel button
-              _cancelCountdown();
-              return KeyEventResult.handled;
-            case LogicalKeyboardKey.escape:
-            case LogicalKeyboardKey.backspace:
-              // Cancel countdown
-              _cancelCountdown();
-              return KeyEventResult.handled;
-            default:
-              return KeyEventResult.handled; // Consume all other keys
-          }
+          // Any key press cancels the countdown
+          _cancelCountdown();
+          return KeyEventResult.handled;
         }
         return KeyEventResult.handled;
       },
-      child: Center(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Adaptive sizing based on screen dimensions
-                Builder(
-                  builder: (context) {
-                    final size = MediaQuery.of(context).size;
-                    final shortestSide = size.shortestSide;
-                    // Use a more generous baseline so countdown matches selected app sizing
-                    final scale = (shortestSide / 720).clamp(0.9, 1.6);
-                    final iconSize = 100.0 * scale;
-                    final iconRadius = 20.0 * scale;
-                    final iconBorder = 3.0 * scale;
-                    final appNameFont = 26.0 * scale;
-                    final circleSize = 220.0 * scale;
-                    final circleBorder = 5.0 * scale;
-                    final numberFont = 80.0 * scale;
-                    final instructionFont = 16.0 * scale;
-                    final instructionPad = 24.0 * scale;
-                    final buttonHPad = 36.0 * scale;
-                    final buttonVPad = 16.0 * scale;
+      child: Stack(
+        children: [
+          // Main content
+          Center(
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  vertical: 40,
+                  horizontal: 20,
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Adaptive sizing based on screen dimensions
+                    Builder(
+                      builder: (context) {
+                        final size = MediaQuery.of(context).size;
+                        final shortestSide = size.shortestSide;
+                        final scale = (shortestSide / 720).clamp(0.9, 1.6);
+                        final iconSize = 160.0 * scale; // Bigger app icon
+                        final iconRadius = 32.0 * scale;
+                        final iconBorder = 4.0 * scale;
+                        final appNameFont = 24.0 * scale;
+                        final buttonFont = 28.0 * scale; // Bigger button text
 
-                    return Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // App icon
-                        Container(
-                          width: iconSize,
-                          height: iconSize,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(iconRadius),
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.3),
-                              width: iconBorder,
-                            ),
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(
-                              iconRadius - 2.0,
-                            ),
-                            child: selectedApp.icon != null
-                                ? Image.memory(
-                                    selectedApp.icon!,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return Container(
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // App icon
+                            Container(
+                              width: iconSize,
+                              height: iconSize,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(iconRadius),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.3),
+                                  width: iconBorder,
+                                ),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(
+                                  iconRadius - 2.0,
+                                ),
+                                child: selectedApp.icon != null
+                                    ? Image.memory(
+                                        selectedApp.icon!,
+                                        fit: BoxFit.cover,
+                                        errorBuilder:
+                                            (context, error, stackTrace) {
+                                              return Container(
+                                                color: Colors.blue.withOpacity(
+                                                  0.2,
+                                                ),
+                                                child: const Icon(
+                                                  Icons.apps,
+                                                  color: Colors.blue,
+                                                ),
+                                              );
+                                            },
+                                      )
+                                    : Container(
                                         color: Colors.blue.withOpacity(0.2),
                                         child: const Icon(
                                           Icons.apps,
                                           color: Colors.blue,
                                         ),
-                                      );
-                                    },
-                                  )
-                                : Container(
-                                    color: Colors.blue.withOpacity(0.2),
-                                    child: const Icon(
-                                      Icons.apps,
-                                      color: Colors.blue,
-                                    ),
-                                  ),
-                          ),
-                        ),
-                        SizedBox(height: 10.0 * scale),
-                        // App name
-                        Text(
-                          selectedApp.name,
-                          style: TextStyle(
-                            fontSize: appNameFont,
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        SizedBox(height: 20.0 * scale),
-                        // Large countdown number
-                        Container(
-                          width: circleSize,
-                          height: circleSize,
-                          decoration: BoxDecoration(
-                            color: Colors.red.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(100 * scale),
-                            border: Border.all(
-                              color: Colors.red,
-                              width: circleBorder,
-                            ),
-                          ),
-                          child: Center(
-                            child: Text(
-                              '$_countdownSeconds',
-                              style: TextStyle(
-                                fontSize: numberFont,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.red,
+                                      ),
                               ),
                             ),
-                          ),
-                        ),
-                        SizedBox(height: 20.0 * scale),
-                        // Instructions
-                        Container(
-                          padding: EdgeInsets.all(instructionPad),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(10 * scale),
-                            border: Border.all(
-                              color: Colors.orange.withOpacity(0.3),
+                            SizedBox(height: 10.0 * scale),
+                            // App name
+                            Text(
+                              selectedApp.name,
+                              style: TextStyle(
+                                fontSize: appNameFont,
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              textAlign: TextAlign.center,
                             ),
-                          ),
-                          child: Text(
-                            'Auto-launching app...\n\nUse arrow keys to navigate\nPress OK to cancel launch',
-                            style: TextStyle(
-                              fontSize: instructionFont,
-                              color: Colors.orange,
+                            SizedBox(height: 40.0 * scale),
+                            // Cancel button - bigger
+                            Focus(
+                              focusNode: _cancelFocus,
+                              autofocus: true,
+                              child: Builder(
+                                builder: (BuildContext context) {
+                                  final isFocused = Focus.of(context).hasFocus;
+                                  return ElevatedButton.icon(
+                                    onPressed: _cancelCountdown,
+                                    icon: Icon(Icons.cancel, size: buttonFont),
+                                    label: Text(
+                                      'Cancel',
+                                      style: TextStyle(fontSize: buttonFont),
+                                    ),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: isFocused
+                                          ? Colors.red.shade700
+                                          : Colors.red,
+                                      foregroundColor: Colors.white,
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: buttonFont * 1.2,
+                                        vertical: buttonFont * 0.6,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
                             ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                        SizedBox(height: 20.0 * scale),
-                        // Cancel button
-                        Focus(
-                          focusNode: _cancelFocus,
-                          autofocus: true,
-                          child: Builder(
-                            builder: (BuildContext context) {
-                              final isFocused = Focus.of(context).hasFocus;
-                              return ElevatedButton.icon(
-                                onPressed: _cancelCountdown,
-                                icon: const Icon(Icons.cancel),
-                                label: const Text('Cancel Launch'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: isFocused
-                                      ? Colors.red.shade700
-                                      : Colors.red,
-                                  foregroundColor: Colors.white,
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: buttonHPad,
-                                    vertical: buttonVPad,
-                                  ),
-                                  textStyle: TextStyle(
-                                    fontSize: 18.0 * scale,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                  side: isFocused
-                                      ? const BorderSide(
-                                          color: Colors.white,
-                                          width: 3,
-                                        )
-                                      : null,
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      ],
-                    );
-                  },
+                          ],
+                        );
+                      },
+                    ),
+                  ],
                 ),
-                // (Removed duplicate static countdown UI to avoid replication in portrait)
-              ],
+              ),
             ),
           ),
-        ),
+          // Countdown timer in top-right corner
+          Positioned(
+            top: 10,
+            right: 10,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 500),
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: _countdownSeconds <= 5
+                    ? (_isFlashing
+                          ? Colors.red.withOpacity(0.8)
+                          : Colors.red.withOpacity(0.3))
+                    : _countdownSeconds <= 8
+                    ? (_isFlashing
+                          ? Colors.yellow.withOpacity(0.8)
+                          : Colors.yellow.withOpacity(0.3))
+                    : (_isFlashing
+                          ? Colors.green.withOpacity(0.8)
+                          : Colors.green.withOpacity(0.3)),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: _countdownSeconds <= 5
+                      ? Colors.red
+                      : _countdownSeconds <= 8
+                      ? Colors.yellow
+                      : Colors.green,
+                  width: 3,
+                ),
+              ),
+              child: Center(
+                child: Text(
+                  '$_countdownSeconds',
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1297,219 +1263,346 @@ class _LauncherHomePageState extends State<LauncherHomePage>
       _updateButtonFocus();
     });
 
-    return Align(
-      alignment: Alignment.topCenter,
-      child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 900),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                // App icon
-                Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.green, width: 3),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.green.withOpacity(0.3),
-                        blurRadius: 10,
-                        spreadRadius: 2,
+    return Builder(
+      builder: (context) {
+        final orientation = MediaQuery.of(context).orientation;
+        final isLandscape = orientation == Orientation.landscape;
+
+        return Align(
+          alignment: Alignment.center,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 900),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // App icon
+                    Container(
+                      width: 100,
+                      height: 100,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.green, width: 3),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.green.withOpacity(0.3),
+                            blurRadius: 10,
+                            spreadRadius: 2,
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(17),
-                    child: selectedApp.icon != null
-                        ? Image.memory(
-                            selectedApp.icon!,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Container(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(17),
+                        child: selectedApp.icon != null
+                            ? Image.memory(
+                                selectedApp.icon!,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Container(
+                                    color: Colors.blue.withOpacity(0.2),
+                                    child: const Icon(
+                                      Icons.apps,
+                                      size: 50,
+                                      color: Colors.blue,
+                                    ),
+                                  );
+                                },
+                              )
+                            : Container(
                                 color: Colors.blue.withOpacity(0.2),
                                 child: const Icon(
                                   Icons.apps,
                                   size: 50,
                                   color: Colors.blue,
                                 ),
-                              );
-                            },
-                          )
-                        : Container(
-                            color: Colors.blue.withOpacity(0.2),
-                            child: const Icon(
-                              Icons.apps,
-                              size: 50,
-                              color: Colors.blue,
-                            ),
-                          ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                // Success indicator
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 15,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.green, width: 1),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.check_circle,
-                        size: 20,
-                        color: Colors.green,
-                      ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'Selected App',
-                        style: TextStyle(
-                          color: Colors.green,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  selectedApp.name,
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 20),
-                Container(
-                  padding: const EdgeInsets.all(15),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.blue.withOpacity(0.3)),
-                  ),
-                  child: const Text(
-                    'This app will launch automatically on startup.',
-                    style: TextStyle(fontSize: 16, color: Colors.grey),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-                const SizedBox(height: 30),
-                Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Focus(
-                          focusNode: _changeSelectionFocus,
-                          child: Builder(
-                            builder: (BuildContext context) {
-                              final isFocused = Focus.of(context).hasFocus;
-                              return ElevatedButton.icon(
-                                onPressed: _clearSelection,
-                                icon: const Icon(Icons.edit),
-                                label: const Text('Change Selection'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: isFocused
-                                      ? Colors.orange.shade700
-                                      : Colors.orange,
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 15,
-                                    vertical: 10,
-                                  ),
-                                  side: isFocused
-                                      ? const BorderSide(
-                                          color: Colors.white,
-                                          width: 3,
-                                        )
-                                      : null,
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 15),
-                        Focus(
-                          focusNode: _launchNowFocus,
-                          child: Builder(
-                            builder: (BuildContext context) {
-                              final isFocused = Focus.of(context).hasFocus;
-                              return ElevatedButton.icon(
-                                onPressed: _startCountdownForLaunch,
-                                icon: const Icon(Icons.play_arrow),
-                                label: const Text('Launch Now'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: isFocused
-                                      ? Colors.green.shade700
-                                      : Colors.green,
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 15,
-                                    vertical: 10,
-                                  ),
-                                  side: isFocused
-                                      ? const BorderSide(
-                                          color: Colors.white,
-                                          width: 3,
-                                        )
-                                      : null,
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 15),
-                    Focus(
-                      focusNode: _settingsFocus,
-                      child: Builder(
-                        builder: (BuildContext context) {
-                          final isFocused = Focus.of(context).hasFocus;
-                          return ElevatedButton.icon(
-                            onPressed: _openSystemSettings,
-                            icon: const Icon(Icons.settings),
-                            label: const Text('Open System Settings'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: isFocused
-                                  ? Colors.blue.shade700
-                                  : Colors.blue,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                                vertical: 12,
                               ),
-                              side: isFocused
-                                  ? const BorderSide(
-                                      color: Colors.white,
-                                      width: 3,
-                                    )
-                                  : null,
-                            ),
-                          );
-                        },
                       ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Success indicator
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.green, width: 1),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.check_circle,
+                            size: 16,
+                            color: Colors.green,
+                          ),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'Selected App',
+                            style: TextStyle(
+                              color: Colors.green,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      selectedApp.name,
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                      ),
+                      child: const Text(
+                        'This app will launch automatically on startup.',
+                        style: TextStyle(fontSize: 14, color: Colors.grey),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Builder(
+                      builder: (context) {
+                        final orientation = MediaQuery.of(context).orientation;
+                        final isLandscape =
+                            orientation == Orientation.landscape;
+
+                        if (isLandscape) {
+                          // Landscape: All 3 buttons in one row
+                          return Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Focus(
+                                focusNode: _changeSelectionFocus,
+                                child: Builder(
+                                  builder: (BuildContext context) {
+                                    final isFocused = Focus.of(
+                                      context,
+                                    ).hasFocus;
+                                    return ElevatedButton.icon(
+                                      onPressed: _clearSelection,
+                                      icon: const Icon(Icons.edit),
+                                      label: const Text('Change Selection'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: isFocused
+                                            ? Colors.orange.shade700
+                                            : Colors.orange,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 8,
+                                        ),
+                                        side: isFocused
+                                            ? const BorderSide(
+                                                color: Colors.white,
+                                                width: 3,
+                                              )
+                                            : null,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Focus(
+                                focusNode: _settingsFocus,
+                                child: Builder(
+                                  builder: (BuildContext context) {
+                                    final isFocused = Focus.of(
+                                      context,
+                                    ).hasFocus;
+                                    return ElevatedButton.icon(
+                                      onPressed: _openSystemSettings,
+                                      icon: const Icon(Icons.settings),
+                                      label: const Text('Settings'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: isFocused
+                                            ? Colors.blue.shade700
+                                            : Colors.blue,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 8,
+                                        ),
+                                        side: isFocused
+                                            ? const BorderSide(
+                                                color: Colors.white,
+                                                width: 3,
+                                              )
+                                            : null,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Focus(
+                                focusNode: _launchNowFocus,
+                                child: Builder(
+                                  builder: (BuildContext context) {
+                                    final isFocused = Focus.of(
+                                      context,
+                                    ).hasFocus;
+                                    return ElevatedButton.icon(
+                                      onPressed: _startCountdownForLaunch,
+                                      icon: const Icon(Icons.play_arrow),
+                                      label: const Text('Launch Now'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: isFocused
+                                            ? Colors.green.shade700
+                                            : Colors.green,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 8,
+                                        ),
+                                        side: isFocused
+                                            ? const BorderSide(
+                                                color: Colors.white,
+                                                width: 3,
+                                              )
+                                            : null,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
+                          );
+                        } else {
+                          // Portrait: Top row with 2 buttons, bottom row with 1 button
+                          return Column(
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Focus(
+                                    focusNode: _changeSelectionFocus,
+                                    child: Builder(
+                                      builder: (BuildContext context) {
+                                        final isFocused = Focus.of(
+                                          context,
+                                        ).hasFocus;
+                                        return ElevatedButton.icon(
+                                          onPressed: _clearSelection,
+                                          icon: const Icon(Icons.edit),
+                                          label: const Text('Change Selection'),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: isFocused
+                                                ? Colors.orange.shade700
+                                                : Colors.orange,
+                                            foregroundColor: Colors.white,
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 15,
+                                              vertical: 10,
+                                            ),
+                                            side: isFocused
+                                                ? const BorderSide(
+                                                    color: Colors.white,
+                                                    width: 3,
+                                                  )
+                                                : null,
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(width: 15),
+                                  Focus(
+                                    focusNode: _settingsFocus,
+                                    child: Builder(
+                                      builder: (BuildContext context) {
+                                        final isFocused = Focus.of(
+                                          context,
+                                        ).hasFocus;
+                                        return ElevatedButton.icon(
+                                          onPressed: _openSystemSettings,
+                                          icon: const Icon(Icons.settings),
+                                          label: const Text('Settings'),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: isFocused
+                                                ? Colors.blue.shade700
+                                                : Colors.blue,
+                                            foregroundColor: Colors.white,
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 15,
+                                              vertical: 10,
+                                            ),
+                                            side: isFocused
+                                                ? const BorderSide(
+                                                    color: Colors.white,
+                                                    width: 3,
+                                                  )
+                                                : null,
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 15),
+                              Focus(
+                                focusNode: _launchNowFocus,
+                                child: Builder(
+                                  builder: (BuildContext context) {
+                                    final isFocused = Focus.of(
+                                      context,
+                                    ).hasFocus;
+                                    return ElevatedButton.icon(
+                                      onPressed: _startCountdownForLaunch,
+                                      icon: const Icon(Icons.play_arrow),
+                                      label: const Text('Launch Now'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: isFocused
+                                            ? Colors.green.shade700
+                                            : Colors.green,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 20,
+                                          vertical: 12,
+                                        ),
+                                        side: isFocused
+                                            ? const BorderSide(
+                                                color: Colors.white,
+                                                width: 3,
+                                              )
+                                            : null,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
+                          );
+                        }
+                      },
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 

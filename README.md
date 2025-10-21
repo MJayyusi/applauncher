@@ -1,44 +1,81 @@
 # App Launcher
 
-An Android launcher app that allows users to select and auto-launch a specific app on startup. Designed for Android devices including TVs with full remote control support.
+A simple Android app launcher that automatically launches your chosen app when the device starts. Perfect for setting up dedicated TV devices that boot directly into your preferred app.
 
-## Features
+**Author:** Moe Jayyusi  
+**License:** Open Source - Free to use, modify, and distribute
 
-- **App Listing**: Lists all installed apps on the device
-- **App Selection**: Allows users to select one app from the installed apps
-- **Auto-Launch**: Automatically launches the selected app when the launcher starts
-- **TV Support**: Full support for Android TV remote controls
-- **Persistent Selection**: Remembers the user's choice between sessions
+## What it does
 
-## How to Use
+- Shows all your installed apps in a grid
+- Lets you pick one app to launch automatically when the device starts
+- Works with TV remote controls and keyboards
+- Has a countdown timer before launching the selected app
+- **Main purpose**: Turn any Android TV/Fire TV into a dedicated app launcher
 
-1. **First Launch**: When you first open the app, you'll see a list of all installed apps
-2. **Select an App**: Use the arrow keys (or remote control) to navigate and press Enter/Select to choose an app
-3. **Auto-Launch**: The next time you open the launcher, it will automatically launch your selected app
-4. **Change Selection**: If you want to change your selection, press Escape to go back to the app selection screen
+## How to use
 
-## TV Remote Controls
+1. **Open the app** - Launch App Launcher from your device
+2. **Browse apps** - Use arrow keys or touch to navigate the grid
+3. **Select an app** - Press Enter/OK on your chosen app
+4. **Confirm** - Review your selection and press "Launch Now"
+5. **Countdown** - Wait for the timer or press any key to cancel
 
-- **Arrow Keys**: Navigate up/down through the app list
-- **Enter/Select**: Select the highlighted app
-- **Escape**: Go back to app selection (if you have a selected app)
+## Controls
+
+- **Arrow keys**: Navigate through apps
+- **Enter/OK**: Select apps and buttons
+- **Back/Escape**: Go back or exit
+- **Any key**: Cancel the countdown timer
 
 ## Installation
 
-1. Build the app: `flutter build apk`
-2. Install on your Android device: `flutter install`
-3. Set as default launcher in Android settings
+### For Phones and Tablets
 
-## Requirements
+1. Download the APK file
+2. Enable "Unknown Sources" in Android settings
+3. Install the APK
+4. **Set as Home Launcher** (Optional):
+   - Go to Settings > Apps > Default Apps > Home App
+   - Select "App Launcher" as your default home app
+   - Press Home button to test
 
-- Android 5.0+ (API level 21+)
-- Android TV support for TV devices
-- `QUERY_ALL_PACKAGES` permission for app listing
+### For Android TV / Google TV
 
-## Technical Details
+**Purpose**: Set App Launcher as your default launcher so it automatically starts your chosen app when the TV boots.
 
-- Built with Flutter
-- Uses `installed_apps` package for app listing
-- Uses `shared_preferences` for storing user selection
-- Uses `url_launcher` for launching selected apps
-- Configured as Android launcher with proper intent filters
+1. Download the APK file
+2. Enable "Unknown Sources" in Android TV settings
+3. Install the APK
+4. **Enable Accessibility Service** (Required for launcher functionality):
+   - Go to Settings > Accessibility
+   - Find "App Launcher" in the list
+   - Turn ON the accessibility service
+   - Grant all required permissions
+5. **Configure Auto-Launch**:
+   - Open App Launcher
+   - Select your desired app from the grid
+   - The app will now launch automatically when TV starts
+
+### For Amazon Fire TV
+
+**Purpose**: Set App Launcher as your default launcher so it automatically starts your chosen app when the Fire TV boots.
+
+1. Download the APK file
+2. Enable "Apps from Unknown Sources" in Fire TV settings:
+   - Go to Settings > My Fire TV > Developer Options
+   - Turn ON "Apps from Unknown Sources"
+3. Install the APK using ADB or sideloading method
+4. **Enable Accessibility Service** (Required for launcher functionality):
+   - Go to Settings > Accessibility
+   - Find "App Launcher" in the list
+   - Turn ON the accessibility service
+   - Grant all required permissions
+5. **Configure Auto-Launch**:
+   - Open App Launcher
+   - Select your desired app from the grid
+   - The app will now launch automatically when Fire TV starts
+
+---
+
+**Open Source Project** - Free to use, modify, and distribute.
